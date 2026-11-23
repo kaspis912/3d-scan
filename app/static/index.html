@@ -1,0 +1,414 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>scan3d</title>
+<script type="module" src="https://unpkg.com/@google/model-viewer@4.0.0/dist/model-viewer.min.js"></script>
+<style>
+  :root {
+    --bg: #f6f6f3; --panel: #ffffff; --ink: #1c1c1a; --muted: #6d6d66; --line: #e3e2dc;
+    --accent: #2f6df6; --accent-ink: #fff; --ok: #1f8a4c; --bad: #c2372b; --warn: #a86b00;
+    --radius: 12px; --mono: ui-monospace, SFMono-Regular, Menlo, monospace;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg: #121211; --panel: #1b1b1a; --ink: #ecebe6; --muted: #9a9991; --line: #2c2c2a;
+      --accent: #5b8cff; --ok: #4cc27f; --bad: #ff6b5e; --warn: #e0a43a; }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--ink);
+    font: 15px/1.45 -apple-system, BlinkMacSystemFont, "Inter", system-ui, sans-serif; }
+  header { display: flex; align-items: baseline; gap: 12px; padding: 20px 24px 8px; }
+  header h1 { font-size: 20px; margin: 0; letter-spacing: -0.01em; }
+  header span { color: var(--muted); font-size: 13px; }
+  main { display: grid; grid-template-columns: minmax(320px, 420px) 1fr; gap: 20px; padding: 12px 24px 24px;
+    height: calc(100vh - 56px); }
+  @media (max-width: 900px) { main { grid-template-columns: 1fr; height: auto; } }
+  .col { display: flex; flex-direction: column; gap: 16px; min-height: 0; }
+  .card { background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); padding: 16px; }
+  h2 { font-size: 13px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); margin: 0 0 12px; }
+  .drop { border: 1.5px dashed var(--line); border-radius: 10px; padding: 22px 12px; text-align: center;
+    color: var(--muted); cursor: pointer; transition: border-color .15s, background .15s; }
+  .drop.over { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 8%, transparent); }
+  .drop b { color: var(--ink); }
+  .row { display: flex; gap: 8px; align-items: center; margin-top: 12px; flex-wrap: wrap; }
+  input[type=text], select { flex: 1; min-width: 0; padding: 8px 10px; border-radius: 8px; border: 1px solid var(--line);
+    background: var(--bg); color: var(--ink); font: inherit; }
+  button { font: inherit; border-radius: 8px; border: 1px solid var(--line); background: var(--panel); color: var(--ink);
+    padding: 7px 12px; cursor: pointer; }
+  button:hover { border-color: var(--muted); }
+  button.primary { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); }
+  button:disabled { opacity: .5; cursor: default; }
+  label.check { display: flex; gap: 6px; align-items: center; color: var(--muted); font-size: 13px; }
+  .hint { color: var(--muted); font-size: 12.5px; margin-top: 10px; }
+  .hint code { font-family: var(--mono); font-size: 12px; background: var(--bg); padding: 1px 5px; border-radius: 4px; }
+  .jobs { overflow-y: auto; flex: 1; min-height: 200px; }
+  .job { display: grid; grid-template-columns: 56px 1fr; gap: 12px; padding: 10px; border-radius: 10px; cursor: pointer;
+    border: 1px solid transparent; }
+  .job:hover { background: var(--bg); }
+  .job.sel { border-color: var(--accent); }
+  .job img, .job .ph { width: 56px; height: 56px; border-radius: 8px; object-fit: cover; background: var(--bg); }
+  .job .name { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .job .meta { color: var(--muted); font-size: 12.5px; }
+  .bar { height: 4px; border-radius: 2px; background: var(--line); margin-top: 6px; overflow: hidden; }
+  .bar > i { display: block; height: 100%; background: var(--accent); transition: width .4s; }
+  .badge { font-size: 11px; padding: 1px 7px; border-radius: 99px; border: 1px solid currentColor; margin-left: 6px; }
+  .s-done { color: var(--ok); } .s-failed { color: var(--bad); } .s-running { color: var(--accent); }
+  .s-queued, .s-cancelled, .s-new { color: var(--muted); }
+  .viewer { display: flex; flex-direction: column; min-height: 480px; padding: 0; overflow: hidden; }
+  .viewer-head { display: flex; gap: 8px; align-items: center; padding: 12px 16px; border-bottom: 1px solid var(--line);
+    flex-wrap: wrap; }
+  .viewer-head .title { font-weight: 600; flex: 1; min-width: 120px; }
+  model-viewer { flex: 1; width: 100%; height: auto; align-self: stretch; min-height: 360px; background: radial-gradient(circle at 50% 40%,
+    color-mix(in srgb, var(--panel) 100%, transparent), var(--bg)); --poster-color: transparent; }
+  .empty { flex: 1; display: grid; place-items: center; color: var(--muted); text-align: center; padding: 24px; }
+  pre.log { margin: 0; padding: 12px 16px; max-height: 220px; overflow: auto; font: 11.5px/1.5 var(--mono);
+    background: var(--bg); border-top: 1px solid var(--line); white-space: pre-wrap; word-break: break-all; }
+  .error { color: var(--bad); padding: 10px 16px; font-size: 13.5px; border-bottom: 1px solid var(--line); }
+  .stats { color: var(--muted); font-size: 12.5px; padding: 8px 16px; border-top: 1px solid var(--line); }
+  .banner { background: color-mix(in srgb, var(--warn) 15%, var(--panel)); color: var(--ink); border-color: var(--warn); }
+  a.btn { text-decoration: none; }
+  .hint a { color: var(--accent); font-weight: 600; }
+  input[type=number] { width: 96px; padding: 8px 10px; border-radius: 8px; border: 1px solid var(--line);
+    background: var(--bg); color: var(--ink); font: inherit; }
+  .sizebar { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; padding: 10px 16px;
+    border-top: 1px solid var(--line); font-size: 13.5px; }
+  .sizebar .dims { font-variant-numeric: tabular-nums; font-weight: 600; }
+  .sizebar .muted { color: var(--muted); }
+  .sizebar select, .sizebar input { flex: 0 0 auto; padding: 5px 8px; }
+  .acc { display: block; }
+  .acc .line { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+  .acc .line + .line, .acc .checks { margin-top: 6px; }
+  .acc .big { font-weight: 600; font-variant-numeric: tabular-nums; }
+  .acc .checks { display: grid; grid-template-columns: repeat(auto-fill, minmax(215px, 1fr)); gap: 2px 18px;
+    font-size: 12.5px; font-variant-numeric: tabular-nums; }
+  .acc .checks div { display: flex; justify-content: space-between; gap: 8px; }
+  .acc .checks span { white-space: nowrap; }
+  .acc .checks span:first-child { color: var(--muted); }
+  .legend { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; color: var(--muted); }
+  .legend i { width: 110px; height: 8px; border-radius: 4px;
+    background: linear-gradient(90deg, rgb(35,90,200), rgb(232,232,226), rgb(200,40,30)); }
+  button.on { border-color: var(--accent); color: var(--accent); }
+</style>
+</head>
+<body>
+<header><h1>scan3d</h1><span>photos or video → textured 3D model · COLMAP + OpenMVS, runs locally</span></header>
+<main>
+  <div class="col">
+    <div class="card banner" id="health" hidden></div>
+    <div class="card">
+      <h2>New scan</h2>
+      <div class="drop" id="drop">
+        <b>Drop photos, a folder, or a video</b><br>
+        <span style="font-size:13px">20–80 overlapping photos all around the object work best</span>
+      </div>
+      <input type="file" id="pickFiles" multiple accept="image/*,video/*,.heic,.heif" hidden>
+      <input type="file" id="pickFolder" webkitdirectory hidden>
+      <div class="row">
+        <button id="btnFiles">Choose files</button>
+        <button id="btnFolder">Choose folder</button>
+        <span id="picked" class="hint" style="margin:0"></span>
+      </div>
+      <div class="row">
+        <input type="text" id="name" placeholder="Name (optional)">
+        <select id="quality">
+          <option value="preview">Preview · fastest</option>
+          <option value="balanced" selected>Balanced</option>
+          <option value="high">High · slowest</option>
+        </select>
+      </div>
+      <div class="row">
+        <span class="hint" style="margin:0">Real size (optional)</span>
+        <select id="sizeDim" style="flex:0 1 auto">
+          <option value="height">Height</option>
+          <option value="width">Width</option>
+          <option value="depth">Depth</option>
+          <option value="longest" selected>Longest side</option>
+        </select>
+        <input type="number" id="sizeMm" min="0" step="0.1" placeholder="mm">
+        <span class="hint" style="margin:0">mm</span>
+      </div>
+      <div class="row">
+        <label class="check"><input type="checkbox" id="mask"> Remove background (turntable)</label>
+        <span style="flex:1"></span>
+        <button class="primary" id="go" disabled>Create 3D model</button>
+      </div>
+      <div class="hint">For exact size, put the object on the printed scan mat:
+        <a href="/api/scan-mat?paper=a4">A4</a> · <a href="/api/scan-mat?paper=letter">Letter</a> (print at 100%).
+        The scale is then measured automatically, so you can leave Real size empty.</div>
+      <div class="hint">To measure how accurate your scans are, print the test piece
+        (<a href="/api/test-piece?format=stl">STL</a> · <a href="/api/test-piece?format=3mf">3MF</a>),
+        scan the print on the mat, then press <b>Check accuracy</b> on the finished scan.</div>
+      <div class="hint" id="inboxHint"></div>
+    </div>
+    <div class="card jobs" id="jobsCard">
+      <h2>Scans</h2>
+      <div id="jobs"><div class="hint">No scans yet.</div></div>
+    </div>
+  </div>
+
+  <div class="card viewer" id="viewer">
+    <div class="empty" id="empty">Select a scan to view it here.</div>
+  </div>
+</main>
+
+<script>
+const $ = (s) => document.querySelector(s);
+let picked = [], jobs = [], selected = null, showLog = false, view = "textured";
+const VIEWS = { textured: ["model.glb", "Textured"], print: ["print_preview.glb", "Print"],
+  dev: ["deviation.glb", "Errors on scan"], devref: ["deviation_reference.glb", "Errors on model"] };
+const MEDIA = /\.(jpe?g|png|heic|heif|tiff?|webp|bmp|mp4|mov|m4v|avi|mkv|webm)$/i;
+const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+
+function setPicked(files, label) {
+  picked = [...files].filter((f) => MEDIA.test(f.name));
+  $("#picked").textContent = picked.length ? `${picked.length} files` : "";
+  if (label && !$("#name").value) $("#name").value = label;
+  $("#go").disabled = !picked.length;
+}
+$("#btnFiles").onclick = () => $("#pickFiles").click();
+$("#btnFolder").onclick = () => $("#pickFolder").click();
+$("#drop").onclick = () => $("#pickFiles").click();
+$("#pickFiles").onchange = (e) => setPicked(e.target.files);
+$("#pickFolder").onchange = (e) => {
+  const f = e.target.files; setPicked(f, f.length ? f[0].webkitRelativePath.split("/")[0] : "");
+};
+
+// Drag & drop, including whole folders.
+const drop = $("#drop");
+drop.ondragover = (e) => { e.preventDefault(); drop.classList.add("over"); };
+drop.ondragleave = () => drop.classList.remove("over");
+drop.ondrop = async (e) => {
+  e.preventDefault(); drop.classList.remove("over");
+  const items = [...e.dataTransfer.items].map((i) => i.webkitGetAsEntry()).filter(Boolean);
+  const files = []; let folderName = "";
+  const walk = (entry) => new Promise((res) => {
+    if (entry.isFile) entry.file((f) => { files.push(f); res(); });
+    else { if (!folderName) folderName = entry.name;
+      const r = entry.createReader(); const all = [];
+      const read = () => r.readEntries(async (batch) => {
+        if (!batch.length) { await Promise.all(all.map(walk)); res(); } else { all.push(...batch); read(); }
+      }); read(); }
+  });
+  await Promise.all(items.map(walk));
+  setPicked(files, folderName);
+};
+
+$("#go").onclick = () => {
+  const fd = new FormData();
+  picked.forEach((f) => fd.append("files", f, f.name));
+  fd.append("name", $("#name").value); fd.append("quality", $("#quality").value);
+  fd.append("mask", $("#mask").checked);
+  fd.append("size_mm", $("#sizeMm").value); fd.append("size_dimension", $("#sizeDim").value);
+  const xhr = new XMLHttpRequest(); xhr.open("POST", "/api/jobs");
+  const btn = $("#go"); btn.disabled = true;
+  xhr.upload.onprogress = (e) => { btn.textContent = `Uploading ${Math.round(100 * e.loaded / e.total)}%`; };
+  xhr.onload = () => {
+    btn.textContent = "Create 3D model";
+    if (xhr.status >= 300) { alert(JSON.parse(xhr.responseText).detail || "Upload failed"); btn.disabled = false; return; }
+    const job = JSON.parse(xhr.responseText);
+    setPicked([]); $("#name").value = ""; $("#sizeMm").value = ""; $("#pickFiles").value = ""; $("#pickFolder").value = "";
+    selected = job.id; refresh();
+  };
+  xhr.onerror = () => { btn.textContent = "Create 3D model"; btn.disabled = false; alert("Upload failed"); };
+  xhr.send(fd);
+};
+
+function printBar(j) {
+  const p = (j.stats || {}).print;
+  const sil = (j.stats || {}).silhouette;
+  if (!p) return "";
+  const ok = (b, yes, no) => `<span class="${b ? "s-done" : "s-failed"}">${b ? "✓" : "✗"} ${b ? yes : no}</span>`;
+  const parts = [
+    ok(p.printable, "Printable solid", "Not a closed solid (re-run to fix)"),
+    p.flat_base ? ok(true, "Flat base") : "",
+    p.volume_cm3 != null ? `<span class="muted">${p.volume_cm3} cm³ · ≈${p.pla_solid_g} g PLA at 100% infill</span>` : "",
+    p.fits_build_volume != null ? ok(p.fits_build_volume, `Fits ${p.build_volume_mm.join("×")} mm bed`,
+      `Larger than ${p.build_volume_mm.join("×")} mm bed`) : "",
+    sil ? (sil.mode === "trim"
+      ? `<span class="s-done" title="The scan was complete, so outlines only removed what stuck out of it">✓ complete scan, trimmed to outlines</span>`
+      : `<span class="s-done">✓ shape from outlines (${sil.frames} frames)</span>`) : "",
+    sil && sil.mode !== "trim" && sil.lowest_view_deg > 20 ? `<span class="s-running" title="Outlines fix the height of a rounded top only from near side-on views">⚠ lowest view ${sil.lowest_view_deg}°: top may be too tall, film one circle at table height</span>` : "",
+  ].filter(Boolean).join(" · ");
+  return `<div class="sizebar">${parts}</div>`;
+}
+
+// Accuracy check: the scan compared with the model it was printed from.
+const signed = (v, digits = 2) => `${v > 0 ? "+" : v < 0 ? "−" : ""}${Math.abs(v).toFixed(digits)}`;
+function accBar(j) {
+  const st = j.stats || {}, a = st.accuracy;
+  if (!st.scale_source) return "";
+  if (!a) return `<div class="sizebar"><span class="muted">Is this a scan of a printed model? Compare it with the original:</span>
+    <span style="flex:1"></span><button data-a="acc">Check accuracy (test piece)</button>
+    <button data-a="accfile">Compare with an STL…</button><input type="file" id="accFile" accept=".stl,.3mf,.obj,.ply" hidden></div>`;
+  const grade = (v, good, fair) => Math.abs(v) <= good ? "s-done" : Math.abs(v) <= fair ? "s-running" : "s-failed";
+  const f = a.fit;
+  const fit = [
+    `<span class="${grade(f.scale_error_pct, 0.5, 1.5)}" title="How much the whole scan is too big (+) or too small (−)">scale ${signed(f.scale_error_pct)} %</span>`,
+    `<span class="${grade(f.tilt_deg, 0.5, 1.5)}" title="How far the scan's base is tilted against the real base">base tilt ${f.tilt_deg}°</span>`,
+    `<span class="${grade(f.lift_mm, 0.3, 1)}" title="+ : the base was cut too high (the part is too short); − : too low">base offset ${signed(f.lift_mm)} mm</span>`,
+    `<span class="muted" title="95% value if tilt and offset are fitted away / and scale too: what is left is shape error">shape only ±${f.p95_free_scaled_mm} mm</span>`,
+  ].join(" · ");
+  const checks = (a.checks || []).map((c) => {
+    if (c.measured_mm == null) return `<div><span>${esc(c.name)}</span><span class="s-failed">not in the scan</span></div>`;
+    const d = c.measured_mm - c.nominal_mm;
+    return `<div><span>${esc(c.name)}</span><span>${c.nominal_mm} → ${c.measured_mm.toFixed(2)}
+      <b class="${grade(d, 0.3, 1)}">${signed(d)}</b></span></div>`;
+  }).join("");
+  const legend = view === "dev" || view === "devref"
+    ? `<span class="legend">−${a.heatmap_limit_mm} mm missing <i></i> +${a.heatmap_limit_mm} mm extra</span>` : "";
+  return `<div class="sizebar acc">
+    <div class="line"><span>Accuracy vs <b>${esc(a.reference)}</b>:</span>
+      <span class="big ${grade(a.p95_mm, 0.5, 1.5)}">95% of the surface within ±${a.p95_mm} mm</span>
+      <span class="muted">typical ${a.median_mm} mm · worst ${a.max_mm} mm · average ${signed(a.bias_mm)} mm</span>
+      <span style="flex:1"></span>${legend}<button data-a="accremove">Remove</button></div>
+    <div class="line">${fit}</div>
+    ${checks ? `<div class="checks">${checks}</div>` : ""}</div>`;
+}
+
+const DIM_LABEL = { height: "Height", width: "Width", depth: "Depth", longest: "Longest side" };
+function sizeBar(j) {
+  const d = (j.stats || {}).dimensions;
+  if (!j.can_rescale) return '<div class="sizebar muted">Re-run this scan once to enable real-size scaling.</div>';
+  const cur = j.size || { dimension: "longest", mm: "" };
+  const opts = Object.entries(DIM_LABEL).map(([k, l]) => `<option value="${k}" ${k === cur.dimension ? "selected" : ""}>${l}</option>`).join("");
+  const st = j.stats || {};
+  const mat = st.scan_mat;
+  const source = st.scale_source === "scan_mat" ? `<span class="s-done">✓ scale from scan mat (fit ±${mat ? mat.rms_mm : "?"} mm)</span>`
+    : st.scale_source === "manual" ? `<span class="muted">scale from your measurement</span>` : "";
+  const dims = d ? (d.unit === "mm"
+      ? `<span class="dims">W ${d.width} × D ${d.depth} × H ${d.height} mm</span> ${source}`
+      : `<span class="muted">Not to scale. Enter one real measurement, or scan on the mat:</span>`) : "";
+  const useMat = mat && st.scale_source === "manual" ? `<button data-a="usemat">Use scan mat</button>` : "";
+  return `<div class="sizebar">${dims}<span style="flex:1"></span>
+    <select id="scaleDim">${opts}</select>
+    <input type="number" id="scaleMm" min="0" step="0.1" placeholder="mm" value="${j.size ? cur.mm : ""}">
+    <button data-a="scale">${st.scale_source ? "Override size" : "Set size"}</button>${useMat}</div>`;
+}
+
+function fmtTime(s) { if (!s) return ""; const m = Math.floor(s / 60); return m ? `${m}m ${s % 60}s` : `${s}s`; }
+
+function renderJobs() {
+  const el = $("#jobs");
+  if (!jobs.length) { el.innerHTML = '<div class="hint">No scans yet.</div>'; return; }
+  el.innerHTML = jobs.map((j) => `
+    <div class="job ${j.id === selected ? "sel" : ""}" data-id="${j.id}">
+      ${j.has_thumb ? `<img src="/api/jobs/${j.id}/thumb?v=${j.status}" alt="">` : '<div class="ph"></div>'}
+      <div style="min-width:0">
+        <div class="name">${esc(j.name)}<span class="badge s-${j.status}">${j.status}</span></div>
+        <div class="meta">${esc(j.stage)} · ${j.quality}${j.source === "inbox" ? " · inbox" : ""}</div>
+        ${j.status === "running" || j.status === "queued" ? `<div class="bar"><i style="width:${j.progress}%"></i></div>` : ""}
+      </div>
+    </div>`).join("");
+  el.querySelectorAll(".job").forEach((n) => n.onclick = () => { selected = n.dataset.id; renderJobs(); renderViewer(true); });
+}
+
+let viewerFor = null;
+async function renderViewer(force = false) {
+  const j = jobs.find((x) => x.id === selected);
+  const v = $("#viewer");
+  if (!j) { v.innerHTML = '<div class="empty">Select a scan to view it here.</div>'; viewerFor = null; return; }
+  if (!j.files.includes(VIEWS[view][0])) view = "textured";
+  const key = `${j.id}:${j.status}:${j.stage}:${showLog}:${view}:${j.updated_at}`;
+  if (!force && key === viewerFor && j.status !== "running") return;
+  const sameModel = viewerFor && viewerFor.startsWith(`${j.id}:done`) && j.status === "done" && viewerFor.endsWith(`:${view}:${j.updated_at}`);
+  viewerFor = key;
+
+  const file = (f, label) => j.files.includes(f) ? `<a class="btn" href="/api/jobs/${j.id}/files/${f}"><button>${label}</button></a>` : "";
+  const actions = [
+    file("model.stl", "STL"), file("model.3mf", "3MF"), file("model.glb", "GLB"), file("model_obj.zip", "OBJ"), file("pointcloud.ply", "Point cloud"),
+    j.status === "running" || j.status === "queued" ? `<button data-a="cancel">Cancel</button>` : "",
+    ["failed", "cancelled", "done"].includes(j.status) ? `<button data-a="retry">Re-run</button>` : "",
+    ...Object.entries(VIEWS).filter(([k, [f]]) => k !== "textured" && j.files.includes(f)).map(([k, [, label]]) =>
+      `<button data-a="view" data-v="${k}" class="${view === k ? "on" : ""}">${label}</button>`),
+    `<button data-a="log">${showLog ? "Hide log" : "Log"}</button>`,
+    j.status !== "running" ? `<button data-a="delete">Delete</button>` : "",
+  ].join("");
+  const s = j.stats || {};
+  const statLine = j.status === "done" ? [
+    s.registered_images != null && `${s.registered_images}/${s.num_images} images aligned`,
+    s.faces && `${s.faces.toLocaleString()} faces`, s.seconds && fmtTime(s.seconds)].filter(Boolean).join(" · ") : "";
+
+  let body;
+  const glbFile = VIEWS[view][0];
+  if (j.status === "done" && j.files.includes("model.glb")) {
+    body = sameModel && v.querySelector("model-viewer") ? null :
+      `<model-viewer src="/api/jobs/${j.id}/files/${glbFile}?v=${j.updated_at}" camera-controls auto-rotate shadow-intensity="1"
+         exposure="1" environment-image="neutral" ar alt="${esc(j.name)}"></model-viewer>`;
+  } else if (j.status === "running" || j.status === "queued") {
+    body = `<div class="empty"><div><div style="font-size:28px;font-weight:600">${Math.round(j.progress)}%</div>
+      <div>${esc(j.stage)}</div><div class="bar" style="width:240px;margin:12px auto"><i style="width:${j.progress}%"></i></div>
+      <div class="hint">Reconstruction uses all CPU cores; balanced quality usually takes 5–20 minutes.</div></div></div>`;
+  } else {
+    body = `<div class="empty">${j.status === "failed" ? "Reconstruction failed." : esc(j.stage)}</div>`;
+  }
+
+  const mv = sameModel ? v.querySelector("model-viewer") : null;
+  v.innerHTML = `<div class="viewer-head"><span class="title">${esc(j.name)}</span>${actions}</div>
+    ${j.error ? `<div class="error">${esc(j.error)}</div>` : ""}<div id="body" style="display:flex;flex:1;min-height:0"></div>
+    ${j.status === "done" ? printBar(j) + sizeBar(j) + accBar(j) : ""}${statLine ? `<div class="stats">${statLine}</div>` : ""}${showLog ? '<pre class="log" id="log">Loading…</pre>' : ""}`;
+  const b = v.querySelector("#body");
+  if (mv) b.appendChild(mv); else b.innerHTML = body;
+  b.firstElementChild && (b.firstElementChild.style.flex = "1");
+
+  v.querySelectorAll("button[data-a]").forEach((btn) => btn.onclick = async () => {
+    const a = btn.dataset.a;
+    if (a === "log") { showLog = !showLog; return renderViewer(true); }
+    if (a === "view") { view = view === btn.dataset.v ? "textured" : btn.dataset.v; return renderViewer(true); }
+    if (a === "acc" || a === "accfile" || a === "accremove") {
+      const send = async (file) => {
+        const fd = new FormData(); if (file) fd.append("reference", file, file.name);
+        btn.disabled = true; btn.textContent = "Comparing…";
+        const r = await fetch(`/api/jobs/${j.id}/accuracy`, a === "accremove" ? { method: "DELETE" } : { method: "POST", body: fd });
+        if (!r.ok) alert((await r.json()).detail || "Could not compare");
+        else if (a !== "accremove") view = "dev";
+        refresh(true);
+      };
+      if (a !== "accfile") return send(null);
+      const pick = v.querySelector("#accFile");
+      pick.onchange = () => pick.files.length && send(pick.files[0]);
+      return pick.click();
+    }
+    if (a === "scale" || a === "usemat") {
+      const mm = a === "usemat" ? "" : v.querySelector("#scaleMm").value;
+      const r = await fetch(`/api/jobs/${j.id}/scale`, { method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ dimension: v.querySelector("#scaleDim").value, mm: mm === "" ? null : Number(mm) }) });
+      if (!r.ok) alert((await r.json()).detail || "Could not rescale");
+      return refresh(true);
+    }
+    if (a === "delete" && !confirm(`Delete "${j.name}" and all its files?`)) return;
+    await fetch(`/api/jobs/${j.id}${a === "delete" ? "" : "/" + a}`, { method: a === "delete" ? "DELETE" : "POST" });
+    if (a === "delete") selected = null;
+    refresh(true);
+  });
+  if (showLog) loadLog(j.id);
+}
+
+async function loadLog(id) {
+  const el = $("#log"); if (!el) return;
+  const atBottom = el.scrollTop + el.clientHeight >= el.scrollHeight - 20;
+  el.textContent = await (await fetch(`/api/jobs/${id}/log?tail=300`)).text() || "(empty)";
+  if (atBottom) el.scrollTop = el.scrollHeight;
+}
+
+async function refresh(force = false) {
+  try { jobs = await (await fetch("/api/jobs")).json(); } catch { return; }
+  if (!selected && jobs.length) selected = jobs[0].id;
+  renderJobs(); await renderViewer(force);
+  const j = jobs.find((x) => x.id === selected);
+  if (showLog && j && j.status === "running") loadLog(j.id);
+}
+
+(async () => {
+  const h = await (await fetch("/api/health")).json();
+  $("#inboxHint").innerHTML = `Or copy a folder of photos (or a video) into <code>${esc(h.inbox)}</code> — it is picked up automatically; results land in <code>${esc(h.outbox)}</code>.`;
+  if (!h.ok) {
+    const missing = Object.entries(h.tools).filter(([, v]) => !v).map(([k]) => k).join(", ");
+    $("#health").hidden = false;
+    $("#health").innerHTML = `<b>Missing tools:</b> ${esc(missing)}. ${esc(h.install_hint || "Run the install script")}.`;
+  }
+  refresh(true); setInterval(refresh, 2000);
+})();
+</script>
+</body>
+</html>
